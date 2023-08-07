@@ -96,6 +96,34 @@ contract PYUSDImplementation is ERC20, PausableUpgradeable, Ownable2StepUpgradea
     event BetaDelegateUnwhitelisted(address indexed oldDelegate);
 
     /**
+     * ERRORS
+     */
+
+    error NotBetaDelegateWhitelister();
+    error NotOwnerOrSupplyController();
+    error NotOwnerOrAssetProtector();
+    error NotOwnerOrProposedOwner();
+    error NotWhitelistedDelegate();
+    error NotOwnerOrWhitelister();
+    error NotSupplyController();
+    error ErrorDerivingSender();
+    error TransactionExpired();
+    error NotAssetProtector();
+    error InsufficientFunds();
+    error NoProposedOwner();
+    error LengthMismatch();
+    error NotWhitelisted();
+    error IncorrectSeq();
+    error SigIncorrect();
+    error Whitelisted();
+    error SameAddress();
+    error ZeroAddress();
+    error ZeroValues();
+    error SigLength();
+    error NotFrozen();
+    error Frozen();
+
+    /**
      * FUNCTIONALITY
      */
 
@@ -161,9 +189,8 @@ contract PYUSDImplementation is ERC20, PausableUpgradeable, Ownable2StepUpgradea
     * @param _value The amount to be transferred.
     */
     function transfer(address _to, uint256 _value) public override whenNotPaused returns (bool) {
-        require(_to != address(0), "cannot transfer to address zero");
-        require(!_frozen[_to] && !_frozen[msg.sender], "address frozen");
-
+        if (_to == address(0)) { revert ZeroAddress(); }
+        if (_frozen[_to] || _frozen[msg.sender]) { revert Frozen(); }
         return super.transfer(_to, _value);
     }
 
@@ -180,9 +207,8 @@ contract PYUSDImplementation is ERC20, PausableUpgradeable, Ownable2StepUpgradea
         address _to,
         uint256 _value
     ) public override whenNotPaused returns (bool) {
-        require(_to != address(0), "cannot transfer to address zero");
-        require(!_frozen[_to] && !_frozen[_from] && !_frozen[msg.sender], "address frozen");
-        
+        if (_to == address(0)) { revert ZeroAddress(); }
+        if (_frozen[_to] || _frozen[msg.sender]) { revert Frozen(); }
         return super.transferFrom(_from, _to, _value);
     }
 
@@ -196,8 +222,7 @@ contract PYUSDImplementation is ERC20, PausableUpgradeable, Ownable2StepUpgradea
      * @param _value The amount of tokens to be spent.
      */
     function approve(address _spender, uint256 _value) public override whenNotPaused returns (bool) {
-        require(!_frozen[_spender] && !_frozen[msg.sender], "address frozen");
-        
+        if (_frozen[_spender] || _frozen[msg.sender]) { revert Frozen(); }
         return super.approve(_spender, _value);
     }
 
@@ -210,7 +235,7 @@ contract PYUSDImplementation is ERC20, PausableUpgradeable, Ownable2StepUpgradea
      * @param _addedValue The amount of tokens to increase the allowance by.
      */
     function increaseApproval(address _spender, uint _addedValue) public whenNotPaused returns (bool) {
-        require(!_frozen[_spender] && !_frozen[msg.sender], "address frozen");
+        if (_frozen[_spender] || _frozen[msg.sender]) { revert Frozen(); }
         return increaseAllowance(_spender, _addedValue);
     }
 
@@ -223,7 +248,7 @@ contract PYUSDImplementation is ERC20, PausableUpgradeable, Ownable2StepUpgradea
      * @param _subtractedValue The amount of tokens to decrease the allowance by.
      */
     function decreaseApproval(address _spender, uint _subtractedValue) public whenNotPaused returns (bool) {
-        require(!_frozen[_spender] && !_frozen[msg.sender], "address frozen");
+        if (_frozen[_spender] || _frozen[msg.sender]) { revert Frozen(); }
         uint oldValue = allowance(msg.sender, _spender);
         if (_subtractedValue > oldValue) {
             _approve(msg.sender, _spender, 0);
@@ -239,8 +264,8 @@ contract PYUSDImplementation is ERC20, PausableUpgradeable, Ownable2StepUpgradea
      * @dev Allows the current owner or proposed owner to cancel transferring control of the contract to a proposedOwner
      */
     function disregardProposedOwner() public {
-        require(msg.sender == proposedOwner || msg.sender == owner(), "only proposedOwner or owner");
-        require(proposedOwner != address(0), "can only disregard a proposed owner that was previously set");
+        if (msg.sender != proposedOwner || msg.sender != owner()) { revert NotOwnerOrProposedOwner(); }
+        if (proposedOwner == address(0)) { revert NoProposedOwner(); }
         address _oldProposedOwner = proposedOwner;
         proposedOwner = address(0);
         transferOwnership(address(0));
@@ -275,14 +300,14 @@ contract PYUSDImplementation is ERC20, PausableUpgradeable, Ownable2StepUpgradea
      * @param _newAssetProtectionRole The new address allowed to freeze/unfreeze addresses and seize their tokens.
      */
     function setAssetProtectionRole(address _newAssetProtectionRole) public {
-        require(msg.sender == assetProtectionRole || msg.sender == owner(), "only assetProtectionRole or Owner");
-        require(assetProtectionRole != _newAssetProtectionRole, "new address is same as a current one");
+        if (msg.sender != assetProtectionRole || msg.sender != owner()) { revert NotOwnerOrAssetProtector(); }
+        if (assetProtectionRole == _newAssetProtectionRole) { revert SameAddress(); }
         emit AssetProtectionRoleSet(assetProtectionRole, _newAssetProtectionRole);
         assetProtectionRole = _newAssetProtectionRole;
     }
 
     modifier onlyAssetProtectionRole() {
-        require(msg.sender == assetProtectionRole, "onlyAssetProtectionRole");
+        if (msg.sender != assetProtectionRole) { revert NotAssetProtector(); }
         _;
     }
 
@@ -291,7 +316,7 @@ contract PYUSDImplementation is ERC20, PausableUpgradeable, Ownable2StepUpgradea
      * @param _addr The new address to freeze.
      */
     function freeze(address _addr) public onlyAssetProtectionRole {
-        require(!_frozen[_addr], "address already frozen");
+        if (_frozen[_addr]) { revert Frozen(); }
         _frozen[_addr] = true;
         emit AddressFrozen(_addr);
     }
@@ -301,7 +326,7 @@ contract PYUSDImplementation is ERC20, PausableUpgradeable, Ownable2StepUpgradea
      * @param _addr The new address to unfreeze.
      */
     function unfreeze(address _addr) public onlyAssetProtectionRole {
-        require(_frozen[_addr], "address already unfrozen");
+        if (!_frozen[_addr]) { revert NotFrozen(); }
         _frozen[_addr] = false;
         emit AddressUnfrozen(_addr);
     }
@@ -311,7 +336,7 @@ contract PYUSDImplementation is ERC20, PausableUpgradeable, Ownable2StepUpgradea
      * @param _addr The new frozen address to wipe.
      */
     function wipeFrozenAddress(address _addr) public onlyAssetProtectionRole {
-        require(_frozen[_addr], "address is not frozen");
+        if (!_frozen[_addr]) { revert NotFrozen(); }
         uint256 balance = balanceOf(_addr);
         _burn(_addr, balance);
         emit FrozenAddressWiped(_addr);
@@ -334,15 +359,16 @@ contract PYUSDImplementation is ERC20, PausableUpgradeable, Ownable2StepUpgradea
      * @param _newSupplyController The address allowed to burn/mint tokens to control supply.
      */
     function setSupplyController(address _newSupplyController) public {
-        require(msg.sender == supplyController || msg.sender == owner(), "only SupplyController or Owner");
-        require(_newSupplyController != address(0), "cannot set supply controller to address zero");
-        require(supplyController != _newSupplyController, "new address is same as a current one");
-        emit SupplyControllerSet(supplyController, _newSupplyController);
+        address _supplyController = supplyController;
+        if (msg.sender != _supplyController || msg.sender != owner()) { revert NotOwnerOrSupplyController(); }
+        if (_newSupplyController == address(0)) { revert ZeroAddress(); }
+        if (_newSupplyController == _supplyController) { revert SameAddress(); }
+        emit SupplyControllerSet(_supplyController, _newSupplyController);
         supplyController = _newSupplyController;
     }
 
     modifier onlySupplyController() {
-        require(msg.sender == supplyController, "onlySupplyController");
+        if (msg.sender != supplyController) { revert NotSupplyController(); }
         _;
     }
 
@@ -401,7 +427,7 @@ contract PYUSDImplementation is ERC20, PausableUpgradeable, Ownable2StepUpgradea
         uint256 seq,
         uint256 deadline
     ) public returns (bool) {
-        require(sig.length == 65, "signature should have length 65");
+        if (sig.length != 65) { revert SigLength(); }
         bytes32 r;
         bytes32 s;
         uint8 v;
@@ -440,12 +466,12 @@ contract PYUSDImplementation is ERC20, PausableUpgradeable, Ownable2StepUpgradea
         uint256 seq,
         uint256 deadline
     ) internal whenNotPaused returns (bool) {
-        require(_betaDelegateWhitelist[msg.sender], "Beta feature only accepts whitelisted delegates");
-        require(value > 0 || fee > 0, "cannot transfer zero tokens with zero fee");
-        require(block.number <= deadline, "transaction expired");
+        if (!_betaDelegateWhitelist[msg.sender]) { revert NotWhitelistedDelegate(); }
+        if (value == 0 && fee == 0) { revert ZeroValues(); }
+        if (block.number > deadline) { revert TransactionExpired(); }
         // prevent sig malleability from ecrecover()
-        require(uint256(s) <= 0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF5D576E7357A4501DDFE92F46681B20A0, "signature incorrect");
-        require(v == 27 || v == 28, "signature incorrect");
+        if (uint256(s) > 0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF5D576E7357A4501DDFE92F46681B20A0) { revert SigIncorrect(); }
+        if (v != 27 && v != 28) { revert SigIncorrect(); }
 
         // EIP712 scheme: https://github.com/ethereum/EIPs/blob/master/EIPS/eip-712.md
         bytes32 delegatedTransferHash = keccak256(abi.encodePacked(// solium-disable-line
@@ -454,11 +480,11 @@ contract PYUSDImplementation is ERC20, PausableUpgradeable, Ownable2StepUpgradea
         bytes32 hash = keccak256(abi.encodePacked(_EIP191_HEADER, EIP712_DOMAIN_HASH, delegatedTransferHash));
         address _from = ecrecover(hash, v, r, s);
 
-        require(_from != address(0), "error determining from address from signature");
-        require(to != address(0), "cannot use address zero");
-        require(!_frozen[to] && !_frozen[_from] && !_frozen[msg.sender], "address frozen");
-        require(value.add(fee) <= balanceOf(_from), "insufficient fund");
-        require(_nextSeqs[_from] == seq, "incorrect seq");
+        if (_from == address(0)) { revert ErrorDerivingSender(); }
+        if (to == address(0)) { revert ZeroAddress(); }
+        if (_frozen[to] || _frozen[_from] || _frozen[msg.sender]) { revert Frozen(); }
+        if (value.add(fee) > balanceOf(_from)) { revert InsufficientFunds(); }
+        if (_nextSeqs[_from] != seq) { revert IncorrectSeq(); }
 
         _nextSeqs[_from] = _nextSeqs[_from].add(1);
         if (fee != 0) {
@@ -496,9 +522,9 @@ contract PYUSDImplementation is ERC20, PausableUpgradeable, Ownable2StepUpgradea
         uint256[] memory seq,
         uint256[] memory deadline
     ) public returns (bool) {
-        require(r.length == s.length && r.length == v.length && r.length == to.length && r.length == value.length, "length mismatch");
-        require(r.length == fee.length && r.length == seq.length && r.length == deadline.length, "length mismatch");
-
+        if (r.length != s.length || r.length != v.length || r.length != to.length || r.length != value.length) { revert LengthMismatch(); }
+        if (r.length != fee.length || r.length != seq.length || r.length != deadline.length) { revert LengthMismatch(); }
+        
         for (uint i = 0; i < r.length; i++) {
             _betaDelegatedTransfer(r[i], s[i], v[i], to[i], value[i], fee[i], seq[i], deadline[i]);
         }
@@ -519,14 +545,15 @@ contract PYUSDImplementation is ERC20, PausableUpgradeable, Ownable2StepUpgradea
      * @param _newWhitelister The address allowed to whitelist betaDelegates.
      */
     function setBetaDelegateWhitelister(address _newWhitelister) public {
-        require(msg.sender == betaDelegateWhitelister || msg.sender == owner(), "only Whitelister or Owner");
-        require(betaDelegateWhitelister != _newWhitelister, "new address is same as a current one");
+        address whitelister = betaDelegateWhitelister;
+        if (msg.sender != whitelister && msg.sender != owner()) { revert NotOwnerOrWhitelister(); }
+        if (whitelister == _newWhitelister) { revert SameAddress(); }
         betaDelegateWhitelister = _newWhitelister;
-        emit BetaDelegateWhitelisterSet(betaDelegateWhitelister, _newWhitelister);
+        emit BetaDelegateWhitelisterSet(whitelister, _newWhitelister);
     }
 
     modifier onlyBetaDelegateWhitelister() {
-        require(msg.sender == betaDelegateWhitelister, "onlyBetaDelegateWhitelister");
+        if (msg.sender != betaDelegateWhitelister) { revert NotBetaDelegateWhitelister(); }
         _;
     }
 
@@ -535,7 +562,7 @@ contract PYUSDImplementation is ERC20, PausableUpgradeable, Ownable2StepUpgradea
      * @param _addr The new address to whitelist.
      */
     function whitelistBetaDelegate(address _addr) public onlyBetaDelegateWhitelister {
-        require(!_betaDelegateWhitelist[_addr], "delegate already whitelisted");
+        if (_betaDelegateWhitelist[_addr]) { revert Whitelisted(); }
         _betaDelegateWhitelist[_addr] = true;
         emit BetaDelegateWhitelisted(_addr);
     }
@@ -545,7 +572,7 @@ contract PYUSDImplementation is ERC20, PausableUpgradeable, Ownable2StepUpgradea
      * @param _addr The new address to whitelist.
      */
     function unwhitelistBetaDelegate(address _addr) public onlyBetaDelegateWhitelister {
-        require(_betaDelegateWhitelist[_addr], "delegate not whitelisted");
+        if (!_betaDelegateWhitelist[_addr]) { revert NotWhitelisted(); }
         _betaDelegateWhitelist[_addr] = false;
         emit BetaDelegateUnwhitelisted(_addr);
     }
