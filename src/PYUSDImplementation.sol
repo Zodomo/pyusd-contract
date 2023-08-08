@@ -208,7 +208,7 @@ contract PYUSDImplementation is ERC20, PausableUpgradeable, Ownable2StepUpgradea
         uint256 _value
     ) public override whenNotPaused returns (bool) {
         if (_to == address(0)) { revert ZeroAddress(); }
-        if (_frozen[_to] || _frozen[msg.sender]) { revert Frozen(); }
+        if (_frozen[_to] || _frozen[_from] || _frozen[msg.sender]) { revert Frozen(); }
         return super.transferFrom(_from, _to, _value);
     }
 
