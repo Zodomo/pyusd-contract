@@ -300,9 +300,10 @@ contract PYUSDImplementation is ERC20, PausableUpgradeable, Ownable2StepUpgradea
      * @param _newAssetProtectionRole The new address allowed to freeze/unfreeze addresses and seize their tokens.
      */
     function setAssetProtectionRole(address _newAssetProtectionRole) public {
-        if (msg.sender != assetProtectionRole || msg.sender != owner()) { revert NotOwnerOrAssetProtector(); }
-        if (assetProtectionRole == _newAssetProtectionRole) { revert SameAddress(); }
-        emit AssetProtectionRoleSet(assetProtectionRole, _newAssetProtectionRole);
+        address assetProtector = assetProtectionRole;
+        if (msg.sender != assetProtector && msg.sender != owner()) { revert NotOwnerOrAssetProtector(); }
+        if (assetProtector == _newAssetProtectionRole) { revert SameAddress(); }
+        emit AssetProtectionRoleSet(assetProtector, _newAssetProtectionRole);
         assetProtectionRole = _newAssetProtectionRole;
     }
 
